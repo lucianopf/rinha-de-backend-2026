@@ -58,7 +58,8 @@ export class WorkerPool {
       const worker = this.workers[this.roundRobin % this.numWorkers];
       this.roundRobin++;
 
-      worker.postMessage({ id, query: query.buffer.slice(0) }, [query.buffer.slice(0)]);
+      const transferBuffer = query.buffer.slice(0);
+      worker.postMessage({ id, query: transferBuffer }, [transferBuffer]);
     });
   }
 

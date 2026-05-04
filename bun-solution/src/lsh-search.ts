@@ -99,39 +99,6 @@ export function buildLSHIndex(
 
   // Hash all vectors into buckets
   console.log(`  Hashing ${n} vectors into ${L} tables...`);
-  const bucketLists: number[][] = [];
-  for (let t = 0; t < L; t++) {
-    const tableBuckets: number[][] = new Array(nBuckets);
-    for (let b = 0; b < nBuckets; b++) tableBuckets[b] = [];
-
-    for (let i = 0; i < n; i++) {
-      const vOffset = i * DIMENSIONS;
-      const vec = vectors.subarray(vOffset, vOffset + DIMENSIONS);
-      const hash = computeHash(vec as unknown as Uint8Array, projections, thresholds, t, K);
-      tableBuckets[hash].push(i);
-    }
-
-    // Flatten to typed arrays
-    let totalInTable = 0;
-    for (let b = 0; b < nBuckets; b++) totalInTable += tableBuckets[b].length;
-
-    const offsets = new Int32Array(nBuckets + 1);
-    const indices = new Int32Array(totalInTable);
-    let pos = 0;
-    for (let b = 0; b < nBuckets; b++) {
-      offsets[b] = pos;
-      for (const idx of tableBuckets[b]) {
-        indices[pos++] = idx;
-      }
-    }
-    offsets[nBuckets] = pos;
-
-    bucketLists.push(...[]);
-    // Store in result format
-    if (!bucketLists.length) bucketLists.length = 0;
-  }
-
-  // Re-do with proper storage
   const bucketIndicesArr: Int32Array[] = [];
   const bucketOffsetsArr: Int32Array[] = [];
 
