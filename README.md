@@ -1,50 +1,79 @@
-# Rinha de Backend 2026 – Fraud Detection
+# Rinha de Backend 2026 – @lucianopf
 
-![cover](/misc/cover.png)
+Submissão para a [Rinha de Backend 2026](https://github.com/zanfranceschi/rinha-de-backend-2026).
+Detecção de fraude em transações de cartão por busca vetorial (k-NN).
 
-[Português](#português) · [English](#english)
+## Stack
 
-### Official Ranking Preview @ [rinhadebackend.com.br](https://rinhadebackend.com.br/)
+| Camada | Tecnologia | Motivo |
+|--------|-----------|--------|
+| Load Balancer | Nginx 1.27 alpine | round-robin com keepalive 256 |
+| API ×2 | Bun 1.2 + TypeScript | Runtime rápido, worker threads nativo |
+| Busca Vetorial | IVF (Inverted File Index) | K-means 1024 clusters, nProbe=20 |
+| Dataset | `references.json.gz` | Pré-processado no build para `ivf-index.bin` |
 
----
+## Abordagem
 
-## Português
+**IVF + Worker Threads** — a melhor combinação que testamos (score 3412, p99=23ms):
 
-A **Rinha de Backend** é uma competição amistosa em que você constrói um backend sob restrições de CPU, memória, e arquitetura. Cada edição traz um tema diferente – e o desta vez é **detecção de fraudes usando busca vetorial**.
+1. **Pré-processamento (build time):** K-means agrupa 3M vetores em 1024 clusters. Vetores quantizados de Float32 para Uint8 (42MB).
+2. **Runtime:** Cada instância roda 2 worker threads. O main thread faz I/O (parse JSON, vectorize), workers fazem a busca IVF.
+3. **Busca IVF:** Para cada query, encontra os 20 clusters mais próximos e busca só neles (~60K vetores vs 3M). Retorna os 5 vizinhos mais próximos.
 
-**Documentação completa do desafio:** [**docs/br/README.md**](./docs/br/README.md)
+### Resultados nos benchmarks
 
-### Edições anteriores
+| Concorrência | p99 | Score | Throughput |
+|-------------|-----|-------|-----------|
+| 20 | 23ms | 3412 | 1318 req/s |
+| 50 | 50ms | 2956 | ~2500 req/s |
+| 100 | 95ms | 2622 | ~2700 req/s |
 
-- [**2025** — Payment Processor](https://github.com/zanfranceschi/rinha-de-backend-2025)
-- [**2024** — Crébitos (controle de concorrência)](https://github.com/zanfranceschi/rinha-de-backend-2024-q1)
-- [**2023** — CRUD de Pessoas](https://github.com/zanfranceschi/rinha-de-backend-2023-q3)
+## Como rodar
 
-### Redes sociais
-- [Website Oficial](https://rinhadebackend.com.br/)
-- [Discord](https://discord.gg/Eca6gJba8R)
-- [X / Twitter](https://x.com/rinhadebackend)
-- [LinkedIn](https://www.linkedin.com/company/108194083)
-- [Bluesky](https://bsky.app/profile/rinhadebackend.bsky.social)
+```bash
+docker compose up -d --build
+curl -fsS http://localhost:9999/ready
+```
 
----
+## Como testar
 
-## English
+```bash
+curl -X POST http://localhost:9999/fraud-score \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "tx-123",
+    "transaction": { "amount": 384.88, "installments": 3, "requested_at": "2025-01-15T14:30:00Z" },
+    "customer": { "avg_amount": 769.76, "tx_count_24h": 3, "known_merchants": ["MERC-001"] },
+    "merchant": { "id": "MERC-001", "mcc": "5912", "avg_amount": 298.95 },
+    "terminal": { "is_online": false, "card_present": true, "km_from_home": 13.7 },
+    "last_transaction": { "timestamp": "2025-01-15T12:00:00Z", "km_from_current": 18.8 }
+  }'
+```
 
-**Rinha de Backend** is a friendly competition where you build a backend under CPU, memory, and architecture constraints. Each edition has a different theme – this one is **fraud detection using vector search**.
+## Limites de recursos
 
-**Full challenge documentation:** [**docs/en/README.md**](./docs/en/README.md)
+| Serviço | CPU | Memória |
+|---------|-----|---------|
+| Nginx | 0.10 | 16MB |
+| API 1 | 0.45 | 167MB |
+| API 2 | 0.45 | 167MB |
+| **Total** | **1.00** | **350MB** |
 
-### Previous editions
+## Estrutura
 
-- [**2025** — Payment Processor](https://github.com/zanfranceschi/rinha-de-backend-2025)
-- [**2024** — Crébitos (concurrency control)](https://github.com/zanfranceschi/rinha-de-backend-2024-q1)
-- [**2023** — People CRUD](https://github.com/zanfranceschi/rinha-de-backend-2023-q3)
-
-### Social media
-
-- [Official Website](https://rinhadebackend.com.br/)
-- [Discord](https://discord.gg/Eca6gJba8R)
-- [X / Twitter](https://x.com/rinhadebackend)
-- [LinkedIn](https://www.linkedin.com/company/108194083)
-- [Bluesky](https://bsky.app/profile/rinhadebackend.bsky.social)
+```
+├── src/
+│   ├── server-ivf-workers.ts   # Server principal (IVF + Workers)
+│   ├── ivf-search-worker.ts    # Worker thread para busca IVF
+│   ├── ivf-search.ts           # IVF index build + search
+│   ├── ivf-preprocess.ts       # Pré-processamento (build time)
+│   ├── worker-pool.ts          # Pool de workers
+│   ├── vectorize.ts            # Payload → vetor 14D
+│   └── search.ts               # Quantização de vetores
+├── resources/                   # Dados de referência do desafio
+├── docker-compose.yml
+├── Dockerfile
+├── nginx.conf
+├── info.json
+└── package.json
+```
